@@ -1,4 +1,4 @@
-import { Point } from '../models/Point';
+import type { Point } from '../models/Point';
 
 const RADIANS_TO_DEGREES = 180 / Math.PI;
 
