@@ -1,5 +1,6 @@
-import * as poseDetection from '@tensorflow-models/pose-detection';
+import * as tf from '@tensorflow/tfjs-core';
 import '@tensorflow/tfjs-backend-webgl';
+import * as poseDetection from '@tensorflow-models/pose-detection';
 import type { Point } from '../models/Point';
 
 const MIN_KEYPOINT_SCORE = 0.3;
@@ -14,6 +15,10 @@ export class PoseDetectionService {
    * MoveNet 모델을 초기화한다.
    */
   async initialize(): Promise<void> {
+    // TensorFlow.js 백엔드 초기화 대기
+    await tf.setBackend('webgl');
+    await tf.ready();
+
     const model = poseDetection.SupportedModels.MoveNet;
     const detectorConfig: poseDetection.MoveNetModelConfig = {
       modelType: poseDetection.movenet.modelType.SINGLEPOSE_LIGHTNING,
