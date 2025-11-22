@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { PostureController } from '../../controllers/PostureController';
 import type { PoseDetectionService } from '../../services/PoseDetectionService';
 import type { Pose } from '@tensorflow-models/pose-detection';

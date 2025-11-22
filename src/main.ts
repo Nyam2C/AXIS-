@@ -1,8 +1,11 @@
 import './style.css';
 import { CameraView } from './views/CameraView';
 import { StatusView } from './views/StatusView';
+import { AlertView } from './views/AlertView';
 import { PoseDetectionService } from './services/PoseDetectionService';
 import { PostureController } from './controllers/PostureController';
+import { MonitoringController } from './controllers/MonitoringController';
+import { AlertController } from './controllers/AlertController';
 
 // AXIS - Posture Correction App
 const app = document.querySelector<HTMLDivElement>('#app')!;
@@ -37,6 +40,19 @@ app.innerHTML = `
         </div>
       </div>
 
+      <!-- 모니터링 통계 -->
+      <div id="stats-container" class="mb-6 hidden">
+        <div class="bg-[#2B3240] rounded-2xl p-4">
+          <div class="flex items-center justify-between mb-3">
+            <span class="text-[13px] text-gray-400">세션 진행</span>
+            <span id="session-timer" class="text-[13px] text-[#3182F6] font-medium">0초 / 60초</span>
+          </div>
+          <div class="w-full h-1.5 bg-[#3B4654] rounded-full overflow-hidden">
+            <div id="session-progress" class="h-full bg-[#3182F6] rounded-full transition-all duration-500" style="width: 0%"></div>
+          </div>
+        </div>
+      </div>
+
       <!-- 정보 카드 -->
       <div class="grid grid-cols-3 gap-3 mb-6">
         <div class="bg-[#2B3240] rounded-2xl p-4 text-center">
@@ -62,18 +78,74 @@ app.innerHTML = `
         </button>
       </div>
     </div>
+
+    <!-- 알림 컨테이너 -->
+    <div id="alert-container"></div>
   </div>
 `;
 
 async function initApp(): Promise<void> {
+  // Views
   const cameraView = new CameraView('camera-container');
   const statusView = new StatusView('status-container');
+  const alertView = new AlertView('alert-container');
+
+  // Services & Controllers
   const poseService = new PoseDetectionService();
   const postureController = new PostureController(poseService);
+  const monitoringController = new MonitoringController();
+  const alertController = new AlertController();
 
+  // UI Elements
   const startBtn = document.getElementById('start-btn') as HTMLButtonElement;
+  const statsContainer = document.getElementById('stats-container') as HTMLDivElement;
+  const sessionTimer = document.getElementById('session-timer') as HTMLSpanElement;
+  const sessionProgress = document.getElementById('session-progress') as HTMLDivElement;
+
   let isRunning = false;
   let animationId: number | null = null;
+  let sessionStartTime: number | null = null;
+  let timerInterval: ReturnType<typeof setInterval> | null = null;
+
+  // 세션 타이머 업데이트
+  const updateSessionTimer = (): void => {
+    if (!sessionStartTime) return;
+
+    const elapsed = Math.floor((Date.now() - sessionStartTime) / 1000);
+    const progress = Math.min((elapsed / 60) * 100, 100);
+
+    sessionTimer.textContent = `${elapsed}초 / 60초`;
+    sessionProgress.style.width = `${progress}%`;
+  };
+
+  // 알림 설정
+  alertController.onAlert(() => {
+    alertView.show();
+  });
+
+  alertView.onDismiss(() => {
+    alertController.dismissAlert();
+  });
+
+  // 세션 완료 콜백
+  monitoringController.onSessionComplete((stats) => {
+    console.log('세션 완료:', stats);
+
+    // 세션 통계 표시 (간단히 콘솔에)
+    const normalRate = stats.levelStats.normal;
+    const warningRate = stats.levelStats.warning;
+    const dangerRate = stats.levelStats.danger;
+    const total = normalRate + warningRate + dangerRate;
+
+    if (total > 0) {
+      const normalPercent = Math.round((normalRate / total) * 100);
+      console.log(`정상 자세 비율: ${normalPercent}%, 평균 각도: ${stats.averageAngle.toFixed(1)}°`);
+    }
+
+    // 세션 초기화 후 다시 시작
+    sessionStartTime = Date.now();
+    monitoringController.start();
+  });
 
   startBtn.addEventListener('click', async () => {
     if (isRunning) {
@@ -86,7 +158,18 @@ async function initApp(): Promise<void> {
         cancelAnimationFrame(animationId);
         animationId = null;
       }
+
+      if (timerInterval) {
+        clearInterval(timerInterval);
+        timerInterval = null;
+      }
+
       cameraView.stopCamera();
+      monitoringController.stop();
+      alertController.dismissAlert();
+      alertView.hide();
+
+      statsContainer.classList.add('hidden');
       return;
     }
 
@@ -107,6 +190,14 @@ async function initApp(): Promise<void> {
       startBtn.disabled = false;
       startBtn.className = 'w-full bg-[#2B3240] hover:bg-[#3B4654] active:scale-[0.98] text-white py-4 px-6 rounded-2xl font-semibold text-[17px] transition-all duration-150 border border-[#3B4654]';
 
+      // 모니터링 시작
+      statsContainer.classList.remove('hidden');
+      sessionStartTime = Date.now();
+      monitoringController.start();
+
+      // 타이머 업데이트 (1초마다)
+      timerInterval = setInterval(updateSessionTimer, 1000);
+
       // 실시간 포즈 감지 루프
       const detectLoop = async (): Promise<void> => {
         if (!isRunning) return;
@@ -121,6 +212,12 @@ async function initApp(): Promise<void> {
 
               if (result) {
                 statusView.render(result);
+
+                // 모니터링에 기록
+                monitoringController.recordPosture(result);
+
+                // 알림 체크
+                alertController.checkPosture(result.level);
               } else {
                 statusView.renderError('얼굴이 잘 보이게 해주세요');
               }
