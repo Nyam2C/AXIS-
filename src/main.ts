@@ -2,7 +2,10 @@ import './style.css';
 import { CameraView } from './views/CameraView';
 import { StatusView } from './views/StatusView';
 import { AlertView } from './views/AlertView';
+import { SettingsView } from './views/SettingsView';
+import { OnboardingView } from './views/OnboardingView';
 import { PoseDetectionService } from './services/PoseDetectionService';
+import { CalibrationService } from './services/CalibrationService';
 import { PostureController } from './controllers/PostureController';
 import { MonitoringController } from './controllers/MonitoringController';
 import { AlertController } from './controllers/AlertController';
@@ -14,8 +17,15 @@ app.innerHTML = `
   <div class="min-h-screen bg-[#191F28] text-white">
     <!-- 헤더 -->
     <header class="safe-area-top px-5 py-4">
-      <div class="flex items-center justify-center max-w-lg mx-auto">
+      <div class="flex items-center justify-between max-w-lg mx-auto">
+        <div class="w-10"></div>
         <h1 class="text-[22px] font-bold tracking-tight">AXIS</h1>
+        <button id="settings-btn" class="w-10 h-10 flex items-center justify-center rounded-full hover:bg-[#2B3240] transition-colors">
+          <svg class="w-6 h-6 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path>
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+          </svg>
+        </button>
       </div>
     </header>
 
@@ -53,6 +63,23 @@ app.innerHTML = `
         </div>
       </div>
 
+      <!-- 캘리브레이션 상태 -->
+      <div id="calibration-status" class="mb-6 hidden">
+        <div class="bg-[#2B3240] rounded-2xl p-4 flex items-center justify-between">
+          <div class="flex items-center gap-3">
+            <div class="w-8 h-8 rounded-full bg-[#00D26A]/15 flex items-center justify-center">
+              <svg class="w-4 h-4 text-[#00D26A]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+              </svg>
+            </div>
+            <div>
+              <div class="text-sm font-medium">캘리브레이션 완료</div>
+              <div id="baseline-angle" class="text-xs text-gray-400">기준 각도: 0°</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- 정보 카드 -->
       <div class="grid grid-cols-3 gap-3 mb-6">
         <div class="bg-[#2B3240] rounded-2xl p-4 text-center">
@@ -79,8 +106,10 @@ app.innerHTML = `
       </div>
     </div>
 
-    <!-- 알림 컨테이너 -->
+    <!-- 오버레이 컨테이너 -->
     <div id="alert-container"></div>
+    <div id="settings-container"></div>
+    <div id="onboarding-container"></div>
   </div>
 `;
 
@@ -89,23 +118,151 @@ async function initApp(): Promise<void> {
   const cameraView = new CameraView('camera-container');
   const statusView = new StatusView('status-container');
   const alertView = new AlertView('alert-container');
+  const settingsView = new SettingsView('settings-container');
+  const onboardingView = new OnboardingView('onboarding-container');
 
   // Services & Controllers
   const poseService = new PoseDetectionService();
+  const calibrationService = new CalibrationService();
   const postureController = new PostureController(poseService);
   const monitoringController = new MonitoringController();
   const alertController = new AlertController();
 
   // UI Elements
   const startBtn = document.getElementById('start-btn') as HTMLButtonElement;
+  const settingsBtn = document.getElementById('settings-btn') as HTMLButtonElement;
   const statsContainer = document.getElementById('stats-container') as HTMLDivElement;
   const sessionTimer = document.getElementById('session-timer') as HTMLSpanElement;
   const sessionProgress = document.getElementById('session-progress') as HTMLDivElement;
+  const calibrationStatus = document.getElementById('calibration-status') as HTMLDivElement;
+  const baselineAngleEl = document.getElementById('baseline-angle') as HTMLDivElement;
 
   let isRunning = false;
   let animationId: number | null = null;
   let sessionStartTime: number | null = null;
   let timerInterval: ReturnType<typeof setInterval> | null = null;
+  let soundEnabled = true;
+
+  // 캘리브레이션 상태 업데이트
+  const updateCalibrationUI = (): void => {
+    if (calibrationService.isCalibrated()) {
+      calibrationStatus.classList.remove('hidden');
+      baselineAngleEl.textContent = `기준 각도: ${calibrationService.getBaselineAngle().toFixed(1)}°`;
+    } else {
+      calibrationStatus.classList.add('hidden');
+    }
+  };
+
+  // 초기 캘리브레이션 UI 업데이트
+  updateCalibrationUI();
+
+  // 온보딩 표시
+  if (onboardingView.shouldShow()) {
+    onboardingView.render();
+
+    onboardingView.onComplete(() => {
+      console.log('온보딩 완료');
+    });
+
+    onboardingView.onSkip(() => {
+      console.log('온보딩 건너뛰기');
+    });
+  }
+
+  // 설정 버튼
+  settingsBtn.addEventListener('click', () => {
+    settingsView.render({
+      soundEnabled,
+      alertThreshold: alertController.getThreshold(),
+      isCalibrated: calibrationService.isCalibrated(),
+    });
+  });
+
+  // 설정 콜백들
+  settingsView.onClose(() => {
+    settingsView.hide();
+  });
+
+  settingsView.onSoundToggle((enabled) => {
+    soundEnabled = enabled;
+    alertView.setSoundEnabled(enabled);
+  });
+
+  settingsView.onThresholdChange((value) => {
+    alertController.setThreshold(value);
+  });
+
+  settingsView.onCalibrate(() => {
+    settingsView.hide();
+    startCalibration();
+  });
+
+  settingsView.onResetCalibration(() => {
+    calibrationService.reset();
+    updateCalibrationUI();
+    settingsView.render({
+      soundEnabled,
+      alertThreshold: alertController.getThreshold(),
+      isCalibrated: false,
+    });
+  });
+
+  // 캘리브레이션 시작
+  const startCalibration = async (): Promise<void> => {
+    try {
+      statusView.renderLoading();
+      startBtn.textContent = '캘리브레이션 중...';
+      startBtn.disabled = true;
+
+      cameraView.render();
+      await poseService.initialize();
+      await cameraView.startCamera();
+
+      calibrationService.clearSamples();
+      let sampleCount = 0;
+      const targetSamples = 10;
+
+      const calibrateLoop = async (): Promise<void> => {
+        const video = cameraView.getVideoElement();
+        if (video && video.readyState >= 2) {
+          const poses = await poseService.detectPose(video);
+
+          if (poses.length > 0) {
+            const result = postureController.analyzePosture(poses[0]);
+            if (result) {
+              calibrationService.addCalibrationSample(result.neckAngle);
+              sampleCount++;
+              statusView.renderError(`캘리브레이션 중... (${sampleCount}/${targetSamples})`);
+            }
+          }
+        }
+
+        if (sampleCount < targetSamples) {
+          setTimeout(calibrateLoop, 300);
+        } else {
+          // 캘리브레이션 완료
+          calibrationService.finishCalibration();
+          cameraView.stopCamera();
+          updateCalibrationUI();
+
+          statusView.renderError('캘리브레이션 완료!');
+          startBtn.textContent = '시작하기';
+          startBtn.disabled = false;
+
+          setTimeout(() => {
+            statusView.renderError('카메라를 시작해주세요');
+          }, 1500);
+        }
+      };
+
+      calibrateLoop();
+    } catch (error) {
+      console.error('Calibration error:', error);
+      statusView.renderError('캘리브레이션 실패');
+      startBtn.textContent = '시작하기';
+      startBtn.disabled = false;
+    }
+  };
 
   // 세션 타이머 업데이트
   const updateSessionTimer = (): void => {
@@ -131,14 +288,11 @@ async function initApp(): Promise<void> {
   monitoringController.onSessionComplete((stats) => {
     console.log('세션 완료:', stats);
 
-    // 세션 통계 표시 (간단히 콘솔에)
-    const normalRate = stats.levelStats.normal;
-    const warningRate = stats.levelStats.warning;
-    const dangerRate = stats.levelStats.danger;
-    const total = normalRate + warningRate + dangerRate;
+    const { normal, warning, danger } = stats.levelStats;
+    const total = normal + warning + danger;
 
     if (total > 0) {
-      const normalPercent = Math.round((normalRate / total) * 100);
+      const normalPercent = Math.round((normal / total) * 100);
       console.log(`정상 자세 비율: ${normalPercent}%, 평균 각도: ${stats.averageAngle.toFixed(1)}°`);
     }
 
@@ -211,13 +365,20 @@ async function initApp(): Promise<void> {
               const result = postureController.analyzePosture(poses[0]);
 
               if (result) {
-                statusView.render(result);
+                // 캘리브레이션 적용
+                const adjustedAngle = calibrationService.getAdjustedAngle(result.neckAngle);
+                const adjustedResult = {
+                  ...result,
+                  neckAngle: Math.abs(adjustedAngle),
+                };
+
+                statusView.render(adjustedResult);
 
                 // 모니터링에 기록
-                monitoringController.recordPosture(result);
+                monitoringController.recordPosture(adjustedResult);
 
                 // 알림 체크
-                alertController.checkPosture(result.level);
+                alertController.checkPosture(adjustedResult.level);
               } else {
                 statusView.renderError('얼굴이 잘 보이게 해주세요');
               }
