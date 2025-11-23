@@ -85,6 +85,27 @@ export class PoseDetectionService {
   }
 
   /**
+   * 코 좌표를 추출한다.
+   */
+  getNose(pose: poseDetection.Pose): Point | null {
+    return this.getKeypoint(pose, 'nose');
+  }
+
+  /**
+   * 왼쪽 눈 좌표를 추출한다.
+   */
+  getLeftEye(pose: poseDetection.Pose): Point | null {
+    return this.getKeypoint(pose, 'left_eye');
+  }
+
+  /**
+   * 오른쪽 눈 좌표를 추출한다.
+   */
+  getRightEye(pose: poseDetection.Pose): Point | null {
+    return this.getKeypoint(pose, 'right_eye');
+  }
+
+  /**
    * 리소스를 정리한다.
    */
   dispose(): void {

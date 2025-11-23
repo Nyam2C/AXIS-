@@ -26,6 +26,9 @@ describe('PostureController', () => {
       getLeftShoulder: vi.fn(),
       getRightEar: vi.fn(),
       getRightShoulder: vi.fn(),
+      getNose: vi.fn(),
+      getLeftEye: vi.fn(),
+      getRightEye: vi.fn(),
       getKeypoint: vi.fn(),
       initialize: vi.fn(),
       dispose: vi.fn(),
@@ -61,11 +64,16 @@ describe('PostureController', () => {
       expect(result?.neckAngle).toBeGreaterThan(0);
     });
 
-    it('귀 좌표가 없으면 null을 반환한다', async () => {
-      // given
-      const mockPose = createMockPose(null, { x: 100, y: 100 });
+    it('귀/어깨/얼굴 모두 없으면 null을 반환한다', async () => {
+      // given - 모든 키포인트가 없음
+      const mockPose = createMockPose(null, null);
       vi.mocked(mockPoseService.getLeftEar).mockReturnValue(null);
-      vi.mocked(mockPoseService.getLeftShoulder).mockReturnValue({ x: 100, y: 100 });
+      vi.mocked(mockPoseService.getRightEar).mockReturnValue(null);
+      vi.mocked(mockPoseService.getLeftShoulder).mockReturnValue(null);
+      vi.mocked(mockPoseService.getRightShoulder).mockReturnValue(null);
+      vi.mocked(mockPoseService.getNose).mockReturnValue(null);
+      vi.mocked(mockPoseService.getLeftEye).mockReturnValue(null);
+      vi.mocked(mockPoseService.getRightEye).mockReturnValue(null);
 
       // when
       const result = controller.analyzePosture(mockPose);
@@ -74,17 +82,23 @@ describe('PostureController', () => {
       expect(result).toBeNull();
     });
 
-    it('어깨 좌표가 없으면 null을 반환한다', async () => {
-      // given
+    it('어깨가 없어도 얼굴이 있으면 분석한다', async () => {
+      // given - 어깨 없음, 얼굴만 있음
       const mockPose = createMockPose({ x: 100, y: 50 }, null);
-      vi.mocked(mockPoseService.getLeftEar).mockReturnValue({ x: 100, y: 50 });
+      vi.mocked(mockPoseService.getLeftEar).mockReturnValue(null);
+      vi.mocked(mockPoseService.getRightEar).mockReturnValue(null);
       vi.mocked(mockPoseService.getLeftShoulder).mockReturnValue(null);
+      vi.mocked(mockPoseService.getRightShoulder).mockReturnValue(null);
+      vi.mocked(mockPoseService.getNose).mockReturnValue({ x: 100, y: 80 });
+      vi.mocked(mockPoseService.getLeftEye).mockReturnValue({ x: 90, y: 60 });
+      vi.mocked(mockPoseService.getRightEye).mockReturnValue({ x: 110, y: 60 });
 
       // when
       const result = controller.analyzePosture(mockPose);
 
       // then
-      expect(result).toBeNull();
+      expect(result).not.toBeNull();
+      expect(result?.neckAngle).toBeDefined();
     });
   });
 
