@@ -209,14 +209,19 @@ export class AppController {
             // 스켈레톤 그리기
             this.cameraView.drawSkeleton(poses[0]);
 
-            const result = this.postureController.analyzePosture(poses[0]);
-            if (result) {
-              this.calibrationService.addCalibrationSample(result.neckAngle);
-              sampleCount++;
+            // 어깨 감지 확인
+            if (!this.postureController.hasShoulderDetected(poses[0])) {
+              this.statusView.renderError('어깨가 보이도록 카메라를 조정해주세요');
+            } else {
+              const result = this.postureController.analyzePosture(poses[0]);
+              if (result) {
+                this.calibrationService.addCalibrationSample(result.neckAngle);
+                sampleCount++;
 
-              this.calibrationCount.textContent = `${sampleCount} / ${targetSamples}`;
-              this.calibrationBar.style.width = `${(sampleCount / targetSamples) * 100}%`;
-              this.statusView.renderError(`바른 자세를 유지해주세요 (${sampleCount}/${targetSamples})`);
+                this.calibrationCount.textContent = `${sampleCount} / ${targetSamples}`;
+                this.calibrationBar.style.width = `${(sampleCount / targetSamples) * 100}%`;
+                this.statusView.renderError(`바른 자세를 유지해주세요 (${sampleCount}/${targetSamples})`);
+              }
             }
           }
         }
@@ -264,7 +269,11 @@ export class AppController {
 
           const result = this.postureController.analyzePosture(poses[0]);
 
-          if (result) {
+          // 어깨 감지 여부 확인
+          if (!this.postureController.hasShoulderDetected(poses[0])) {
+            this.statusView.renderError('어깨가 보이도록 카메라를 조정해주세요');
+            this.currentAngleEl.textContent = '-';
+          } else if (result) {
             const adjustedAngle = Math.abs(this.calibrationService.getAdjustedAngle(result.neckAngle));
 
             let level: 'normal' | 'warning' | 'danger' = 'normal';
@@ -283,7 +292,8 @@ export class AppController {
             this.monitoringController.recordPosture(adjustedResult);
             this.alertController.checkPosture(adjustedResult.level);
           } else {
-            this.statusView.renderError('얼굴이 잘 보이게 해주세요');
+            this.statusView.renderError('어깨가 보이도록 카메라를 조정해주세요');
+            this.currentAngleEl.textContent = '-';
           }
         } else {
           this.statusView.renderError('포즈를 감지할 수 없습니다');

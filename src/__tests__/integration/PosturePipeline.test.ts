@@ -25,13 +25,13 @@ describe('Posture Detection Pipeline 통합 테스트', () => {
   let container: HTMLDivElement;
 
   const createMockPose = (
-    earX: number,
-    earY: number,
+    noseX: number,
+    noseY: number,
     shoulderX: number,
     shoulderY: number
   ): Pose => ({
     keypoints: [
-      { x: earX, y: earY, name: 'left_ear', score: 0.9 },
+      { x: noseX, y: noseY, name: 'nose', score: 0.9 },
       { x: shoulderX, y: shoulderY, name: 'left_shoulder', score: 0.9 },
     ],
   });
@@ -52,7 +52,7 @@ describe('Posture Detection Pipeline 통합 테스트', () => {
 
   describe('전체 파이프라인', () => {
     it('정상 자세 포즈 → 분석 → UI 렌더링', () => {
-      // given - 귀와 어깨가 수직 (정상 자세)
+      // given - 코와 어깨가 수직 (정상 자세)
       const pose = createMockPose(100, 50, 100, 100);
 
       // when

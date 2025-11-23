@@ -1,13 +1,15 @@
 import type { Pose } from '@tensorflow-models/pose-detection';
 import type { PoseDetectionService } from '../services/PoseDetectionService';
 import type { PostureState, PostureLevel } from '../models/PostureState';
-import { calculateNeckAngle, calculateHeadTiltAngle } from '../services/AngleCalculator';
+import type { Point } from '../models/Point';
+import { calculateNeckAngle } from '../services/AngleCalculator';
 
 const ANGLE_THRESHOLD_WARNING = 15;
 const ANGLE_THRESHOLD_DANGER = 25;
 
 /**
  * 자세 분석을 담당하는 Controller
+ * 코-어깨 중심점 기반 측정 사용
  */
 export class PostureController {
   private poseService: PoseDetectionService;
@@ -17,61 +19,54 @@ export class PostureController {
   }
 
   /**
-   * 포즈 데이터를 분석하여 자세 상태를 반환한다.
-   * 우선 어깨 기반 분석을 시도하고, 실패 시 얼굴 기반 분석을 사용한다.
-   * @param pose - 감지된 포즈
-   * @returns 자세 상태 또는 null
+   * 코와 어깨가 감지되는지 확인한다.
    */
-  analyzePosture(pose: Pose): PostureState | null {
-    // 1순위: 어깨 기반 분석 (더 정확함)
-    const shoulderResult = this.analyzeWithShoulder(pose);
-    if (shoulderResult) {
-      return shoulderResult;
-    }
-
-    // 2순위: 얼굴 기반 분석 (어깨가 안 보일 때)
-    return this.analyzeWithFace(pose);
+  hasShoulderDetected(pose: Pose): boolean {
+    const nose = this.poseService.getNose(pose);
+    const leftShoulder = this.poseService.getLeftShoulder(pose);
+    const rightShoulder = this.poseService.getRightShoulder(pose);
+    // 코와 어깨 중 하나라도 있어야 함
+    return !!(nose && (leftShoulder || rightShoulder));
   }
 
   /**
-   * 어깨 기반으로 자세를 분석한다.
+   * 포즈 데이터를 분석하여 자세 상태를 반환한다.
+   * 코-어깨 중심점 기반 분석 사용
+   * @param pose - 감지된 포즈
+   * @returns 자세 상태 또는 null (미감지 시)
    */
-  private analyzeWithShoulder(pose: Pose): PostureState | null {
-    const ear = this.poseService.getLeftEar(pose) || this.poseService.getRightEar(pose);
-    const shoulder = this.poseService.getLeftShoulder(pose) || this.poseService.getRightShoulder(pose);
+  analyzePosture(pose: Pose): PostureState | null {
+    const nose = this.poseService.getNose(pose);
+    const leftShoulder = this.poseService.getLeftShoulder(pose);
+    const rightShoulder = this.poseService.getRightShoulder(pose);
 
-    if (!ear || !shoulder) {
+    if (!nose) {
       return null;
     }
 
-    const neckAngle = calculateNeckAngle(ear, shoulder);
+    // 어깨 중심점 계산
+    let shoulderCenter: Point;
+
+    if (leftShoulder && rightShoulder) {
+      // 양쪽 어깨 모두 있으면 중심점 사용
+      shoulderCenter = {
+        x: (leftShoulder.x + rightShoulder.x) / 2,
+        y: (leftShoulder.y + rightShoulder.y) / 2,
+      };
+    } else if (leftShoulder) {
+      shoulderCenter = leftShoulder;
+    } else if (rightShoulder) {
+      shoulderCenter = rightShoulder;
+    } else {
+      return null;
+    }
+
+    const neckAngle = calculateNeckAngle(nose, shoulderCenter);
     const level = this.determineLevel(neckAngle);
 
     return {
       level,
       neckAngle,
-      timestamp: Date.now(),
-    };
-  }
-
-  /**
-   * 얼굴(코, 눈) 기반으로 자세를 분석한다.
-   */
-  private analyzeWithFace(pose: Pose): PostureState | null {
-    const nose = this.poseService.getNose(pose);
-    const leftEye = this.poseService.getLeftEye(pose);
-    const rightEye = this.poseService.getRightEye(pose);
-
-    if (!nose || !leftEye || !rightEye) {
-      return null;
-    }
-
-    const headTiltAngle = calculateHeadTiltAngle(nose, leftEye, rightEye);
-    const level = this.determineLevel(Math.abs(headTiltAngle));
-
-    return {
-      level,
-      neckAngle: headTiltAngle,
       timestamp: Date.now(),
     };
   }
