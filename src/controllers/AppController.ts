@@ -3,6 +3,7 @@ import { StatusView } from '../views/StatusView';
 import { AlertView } from '../views/AlertView';
 import { SettingsView } from '../views/SettingsView';
 import { OnboardingView } from '../views/OnboardingView';
+import { ResultView } from '../views/ResultView';
 import { PoseDetectionService } from '../services/PoseDetectionService';
 import { CalibrationService } from '../services/CalibrationService';
 import { PostureController } from './PostureController';
@@ -19,6 +20,7 @@ export class AppController {
   private alertView: AlertView;
   private settingsView: SettingsView;
   private onboardingView: OnboardingView;
+  private resultView: ResultView;
 
   // Services & Controllers
   private poseService: PoseDetectionService;
@@ -48,6 +50,7 @@ export class AppController {
     this.alertView = new AlertView('alert-container');
     this.settingsView = new SettingsView('settings-container');
     this.onboardingView = new OnboardingView('onboarding-container');
+    this.resultView = new ResultView('result-container');
 
     // Services & Controllers
     this.poseService = new PoseDetectionService();
@@ -65,6 +68,7 @@ export class AppController {
     this.setupOnboarding();
     this.setupSettings();
     this.setupAlerts();
+    this.setupResult();
     this.setupStartButton();
   }
 
@@ -129,6 +133,15 @@ export class AppController {
   }
 
   /**
+   * 결과 화면을 설정한다.
+   */
+  private setupResult(): void {
+    this.resultView.onClose(() => {
+      this.resultView.hide();
+    });
+  }
+
+  /**
    * 시작 버튼을 설정한다.
    */
   private setupStartButton(): void {
@@ -151,6 +164,10 @@ export class AppController {
    * 측정을 중지한다.
    */
   private stop(): void {
+    // 통계 먼저 가져오기 (stop 호출 전에)
+    const stats = this.monitoringController.getSessionStats();
+    const hasData = stats.totalSamples > 0;
+
     this.isRunning = false;
     this.updateButtonToStart();
 
@@ -162,12 +179,18 @@ export class AppController {
     this.cameraView.clearCanvas();
     this.cameraView.stopCamera();
     this.monitoringController.stop();
+    this.monitoringController.clearHistory();
     this.alertController.dismissAlert();
     this.alertView.hide();
     this.calibrationService.reset();
 
     this.calibrationProgress.classList.add('hidden');
     this.statsContainer.classList.add('hidden');
+
+    // 데이터가 있으면 결과 화면 표시
+    if (hasData) {
+      this.resultView.render(stats);
+    }
   }
 
   /**

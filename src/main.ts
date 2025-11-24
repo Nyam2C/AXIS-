@@ -95,6 +95,7 @@ app.innerHTML = `
     <div id="alert-container"></div>
     <div id="settings-container"></div>
     <div id="onboarding-container"></div>
+    <div id="result-container"></div>
   </div>
 `;
 

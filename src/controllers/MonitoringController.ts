@@ -3,6 +3,11 @@ import type { PostureState, PostureLevel } from '../models/PostureState';
 export interface SessionStats {
   averageAngle: number;
   levelStats: Record<PostureLevel, number>;
+  totalDuration: number; // 총 측정 시간 (ms)
+  goodPostureRatio: number; // 좋은 자세 비율 (0-100)
+  totalSamples: number; // 총 샘플 수
+  startTime: number; // 시작 시간
+  endTime: number; // 종료 시간
 }
 
 const SAMPLE_INTERVAL = 10000; // 10초
@@ -21,6 +26,7 @@ export class MonitoringController {
   private sessionCallback: ((stats: SessionStats) => void) | null = null;
   private sampleTimer: ReturnType<typeof setInterval> | null = null;
   private sessionTimer: ReturnType<typeof setTimeout> | null = null;
+  private startTime: number = 0;
 
   /**
    * 모니터링 실행 여부를 반환한다.
@@ -36,6 +42,7 @@ export class MonitoringController {
     if (this.running) return;
 
     this.running = true;
+    this.startTime = Date.now();
 
     // 10초마다 샘플링 콜백
     this.sampleTimer = setInterval(() => {
@@ -128,14 +135,36 @@ export class MonitoringController {
   }
 
   /**
+   * 좋은 자세 비율을 계산한다 (0-100).
+   */
+  getGoodPostureRatio(): number {
+    if (this.history.length === 0) return 0;
+
+    const normalCount = this.history.filter((s) => s.level === 'normal').length;
+    return Math.round((normalCount / this.history.length) * 100);
+  }
+
+  /**
+   * 전체 세션 통계를 반환한다.
+   */
+  getSessionStats(): SessionStats {
+    const endTime = Date.now();
+    return {
+      averageAngle: this.getAverageAngle(),
+      levelStats: this.getLevelStats(),
+      totalDuration: endTime - this.startTime,
+      goodPostureRatio: this.getGoodPostureRatio(),
+      totalSamples: this.history.length,
+      startTime: this.startTime,
+      endTime,
+    };
+  }
+
+  /**
    * 세션을 완료하고 통계를 전달한다.
    */
   private completeSession(): void {
-    const stats: SessionStats = {
-      averageAngle: this.getAverageAngle(),
-      levelStats: this.getLevelStats(),
-    };
-
+    const stats = this.getSessionStats();
     this.sessionCallback?.(stats);
     this.clearHistory();
     this.stop();
