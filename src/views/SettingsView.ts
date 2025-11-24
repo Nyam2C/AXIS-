@@ -89,11 +89,7 @@ export class SettingsView {
                 캘리브레이션 초기화
               </button>
             `
-                : `
-              <button data-calibrate class="w-full py-3 px-4 bg-[#3182F6] hover:bg-[#1B64DA] rounded-xl font-medium transition-colors">
-                캘리브레이션 시작
-              </button>
-            `
+                : ''
             }
           </div>
         </div>
