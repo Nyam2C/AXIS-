@@ -8,6 +8,11 @@ export type PostureLevel = 'normal' | 'warning' | 'danger';
  */
 export interface PostureState {
   level: PostureLevel;
-  neckAngle: number;
+  /** 코-어깨 거리 (픽셀) */
+  noseToShoulderDistance: number;
+  /** 기준 대비 거리 변화량 (픽셀, 양수=거북목) */
+  distanceChange: number;
   timestamp: number;
+  /** 하위 호환성용 (deprecated) */
+  neckAngle: number;
 }

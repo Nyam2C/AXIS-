@@ -2,6 +2,20 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { StatusView } from '../../views/StatusView';
 import type { PostureState } from '../../models/PostureState';
 
+// 테스트용 PostureState 생성 헬퍼
+function createPostureState(
+  level: 'normal' | 'warning' | 'danger',
+  distanceChange: number
+): PostureState {
+  return {
+    level,
+    neckAngle: distanceChange,
+    noseToShoulderDistance: 100,
+    distanceChange,
+    timestamp: Date.now(),
+  };
+}
+
 describe('StatusView', () => {
   let container: HTMLDivElement;
   let statusView: StatusView;
@@ -33,11 +47,7 @@ describe('StatusView', () => {
   describe('render', () => {
     it('normal 상태를 렌더링한다', () => {
       statusView = new StatusView('status-container');
-      const state: PostureState = {
-        level: 'normal',
-        neckAngle: 10,
-        timestamp: Date.now(),
-      };
+      const state = createPostureState('normal', 10);
 
       statusView.render(state);
 
@@ -47,39 +57,27 @@ describe('StatusView', () => {
 
     it('warning 상태를 렌더링한다', () => {
       statusView = new StatusView('status-container');
-      const state: PostureState = {
-        level: 'warning',
-        neckAngle: 20,
-        timestamp: Date.now(),
-      };
+      const state = createPostureState('warning', 25);
 
       statusView.render(state);
 
-      expect(container.textContent).toContain('20');
+      expect(container.textContent).toContain('25');
       expect(container.innerHTML).toContain('warning');
     });
 
     it('danger 상태를 렌더링한다', () => {
       statusView = new StatusView('status-container');
-      const state: PostureState = {
-        level: 'danger',
-        neckAngle: 30,
-        timestamp: Date.now(),
-      };
+      const state = createPostureState('danger', 45);
 
       statusView.render(state);
 
-      expect(container.textContent).toContain('30');
+      expect(container.textContent).toContain('45');
       expect(container.innerHTML).toContain('danger');
     });
 
-    it('각도를 정수로 표시한다', () => {
+    it('거리 변화를 정수로 표시한다', () => {
       statusView = new StatusView('status-container');
-      const state: PostureState = {
-        level: 'normal',
-        neckAngle: 12.567,
-        timestamp: Date.now(),
-      };
+      const state = createPostureState('normal', 12.567);
 
       statusView.render(state);
 

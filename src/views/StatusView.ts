@@ -45,10 +45,12 @@ export class StatusView {
 
   /**
    * 자세 상태를 렌더링한다.
+   * 거리 변화(px) 기반으로 표시한다.
    */
   render(state: PostureState): void {
     const config = LEVEL_CONFIG[state.level];
-    const angle = Math.round(state.neckAngle);
+    const distanceChange = Math.round(state.distanceChange);
+    const absChange = Math.abs(distanceChange);
 
     this.container.innerHTML = `
       <div class="bg-[#2B3240] rounded-3xl p-6 ${state.level}">
@@ -63,12 +65,12 @@ export class StatusView {
           </div>
         </div>
 
-        <!-- 각도 표시 -->
+        <!-- 거리 변화 표시 -->
         <div class="text-center mb-6">
           <div class="text-[64px] font-bold tracking-tight leading-none mb-2" style="color: ${config.color}">
-            ${angle}°
+            ${distanceChange > 0 ? '+' : ''}${distanceChange}<span class="text-[32px]">px</span>
           </div>
-          <div class="text-[15px] text-gray-400">목 기울기 각도</div>
+          <div class="text-[15px] text-gray-400">기준 대비 변화량</div>
         </div>
 
         <!-- 상태 메시지 -->
@@ -79,15 +81,15 @@ export class StatusView {
         <!-- 프로그레스 바 -->
         <div class="mt-6">
           <div class="flex justify-between text-[13px] text-gray-500 mb-2">
-            <span>0°</span>
-            <span>15°</span>
-            <span>25°</span>
-            <span>45°</span>
+            <span>0px</span>
+            <span>20px</span>
+            <span>40px</span>
+            <span>60px</span>
           </div>
           <div class="h-2 bg-[#3B4654] rounded-full overflow-hidden">
             <div
               class="h-full rounded-full transition-all duration-300"
-              style="width: ${Math.min(100, (angle / 45) * 100)}%; background: ${config.color}"
+              style="width: ${Math.min(100, (absChange / 60) * 100)}%; background: ${config.color}"
             ></div>
           </div>
         </div>

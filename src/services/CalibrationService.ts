@@ -1,18 +1,26 @@
 const STORAGE_KEY = 'axis_calibration';
+const MAX_DEVIATION_THRESHOLD = 15; // 최대 허용 편차 (픽셀)
 
 interface CalibrationData {
-  baselineAngle: number;
+  baselineDistance: number;
   calibrated: boolean;
+}
+
+interface CalibrationResult {
+  success: boolean;
+  needsRetry: boolean;
+  message: string;
 }
 
 /**
  * 캘리브레이션 서비스
  * - 개인별 기준 자세 설정
- * - 보정된 각도 계산
+ * - 어깨선과 코 간의 거리 기반 측정
+ * - 변동이 큰 경우 재측정 요청
  * - localStorage 영속성
  */
 export class CalibrationService {
-  private baselineAngle = 0;
+  private baselineDistance = 0;
   private calibrated = false;
   private samples: number[] = [];
 
@@ -28,36 +36,38 @@ export class CalibrationService {
   }
 
   /**
-   * 기준 각도를 반환한다.
+   * 기준 거리를 반환한다.
    */
-  getBaselineAngle(): number {
-    return this.baselineAngle;
+  getBaselineDistance(): number {
+    return this.baselineDistance;
   }
 
   /**
-   * 기준 각도를 직접 설정한다.
+   * 기준 거리를 직접 설정한다.
    */
-  calibrate(angle: number): void {
-    this.baselineAngle = angle;
+  calibrate(distance: number): void {
+    this.baselineDistance = distance;
     this.calibrated = true;
     this.saveToStorage();
   }
 
   /**
-   * 보정된 각도를 반환한다.
+   * 보정된 거리 변화를 반환한다.
+   * 양수: 코가 기준보다 앞으로 나옴 (거북목)
+   * 음수: 코가 기준보다 뒤로 감
    */
-  getAdjustedAngle(rawAngle: number): number {
+  getAdjustedDistance(rawDistance: number): number {
     if (!this.calibrated) {
-      return rawAngle;
+      return rawDistance;
     }
-    return rawAngle - this.baselineAngle;
+    return rawDistance - this.baselineDistance;
   }
 
   /**
    * 캘리브레이션을 초기화한다.
    */
   reset(): void {
-    this.baselineAngle = 0;
+    this.baselineDistance = 0;
     this.calibrated = false;
     this.samples = [];
     localStorage.removeItem(STORAGE_KEY);
@@ -66,8 +76,8 @@ export class CalibrationService {
   /**
    * 캘리브레이션 샘플을 추가한다.
    */
-  addCalibrationSample(angle: number): void {
-    this.samples.push(angle);
+  addCalibrationSample(distance: number): void {
+    this.samples.push(distance);
   }
 
   /**
@@ -85,18 +95,57 @@ export class CalibrationService {
   }
 
   /**
-   * 샘플 평균으로 캘리브레이션을 완료한다.
+   * 샘플의 변동이 허용 범위 내인지 검사한다.
    */
-  finishCalibration(): boolean {
+  private checkSampleStability(): { isStable: boolean; deviation: number } {
+    if (this.samples.length < 2) {
+      return { isStable: true, deviation: 0 };
+    }
+
+    const min = Math.min(...this.samples);
+    const max = Math.max(...this.samples);
+    const deviation = max - min;
+
+    return {
+      isStable: deviation <= MAX_DEVIATION_THRESHOLD,
+      deviation,
+    };
+  }
+
+  /**
+   * 샘플 평균으로 캘리브레이션을 완료한다.
+   * 변동이 크면 재측정을 요청한다.
+   */
+  finishCalibration(): CalibrationResult {
     if (this.samples.length === 0) {
-      return false;
+      return {
+        success: false,
+        needsRetry: false,
+        message: '샘플이 없습니다.',
+      };
+    }
+
+    const { isStable, deviation } = this.checkSampleStability();
+
+    if (!isStable) {
+      this.samples = [];
+      return {
+        success: false,
+        needsRetry: true,
+        message: `측정값 변동이 너무 큽니다 (${deviation.toFixed(1)}px). 자세를 고정하고 다시 측정해주세요.`,
+      };
     }
 
     const average =
       this.samples.reduce((sum, s) => sum + s, 0) / this.samples.length;
     this.calibrate(average);
     this.samples = [];
-    return true;
+
+    return {
+      success: true,
+      needsRetry: false,
+      message: '캘리브레이션 완료!',
+    };
   }
 
   /**
@@ -107,7 +156,7 @@ export class CalibrationService {
     if (stored) {
       try {
         const data: CalibrationData = JSON.parse(stored);
-        this.baselineAngle = data.baselineAngle;
+        this.baselineDistance = data.baselineDistance;
         this.calibrated = data.calibrated;
       } catch {
         // 파싱 실패 시 무시
@@ -120,7 +169,7 @@ export class CalibrationService {
    */
   private saveToStorage(): void {
     const data: CalibrationData = {
-      baselineAngle: this.baselineAngle,
+      baselineDistance: this.baselineDistance,
       calibrated: this.calibrated,
     };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(data));

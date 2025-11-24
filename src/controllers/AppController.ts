@@ -42,7 +42,7 @@ export class AppController {
   private isRunning = false;
   private animationId: number | null = null;
   private soundEnabled = true;
-  private lastPostureResult: { level: 'normal' | 'warning' | 'danger'; neckAngle: number } | null = null;
+  private lastPostureResult: { level: 'normal' | 'warning' | 'danger'; neckAngle: number; distanceChange: number } | null = null;
 
   constructor() {
     // Views
@@ -57,6 +57,7 @@ export class AppController {
     this.poseService = new PoseDetectionService();
     this.calibrationService = new CalibrationService();
     this.postureController = new PostureController(this.poseService);
+    this.postureController.setCalibrationService(this.calibrationService);
     this.monitoringController = new MonitoringController();
     this.alertController = new AlertController();
   }
@@ -216,52 +217,91 @@ export class AppController {
 
   /**
    * 캘리브레이션을 실행한다.
+   * 5회 측정 후 변동이 크면 다시 측정한다.
    */
   private async runCalibration(): Promise<void> {
     this.calibrationProgress.classList.remove('hidden');
-    this.calibrationService.clearSamples();
 
-    let sampleCount = 0;
-    const targetSamples = 5;
+    const runCalibrationAttempt = (): Promise<boolean> => {
+      this.calibrationService.clearSamples();
+      let sampleCount = 0;
+      const targetSamples = 5;
 
-    return new Promise((resolve) => {
-      const loop = async () => {
-        const video = this.cameraView.getVideoElement();
-        if (video && video.readyState >= 2) {
-          const poses = await this.poseService.detectPose(video);
+      return new Promise((resolve) => {
+        const loop = async () => {
+          const video = this.cameraView.getVideoElement();
+          if (video && video.readyState >= 2) {
+            const poses = await this.poseService.detectPose(video);
 
-          if (poses.length > 0) {
-            // 스켈레톤 그리기
-            this.cameraView.drawSkeleton(poses[0]);
+            if (poses.length > 0) {
+              // 스켈레톤 그리기
+              this.cameraView.drawSkeleton(poses[0]);
 
-            // 어깨 감지 확인
-            if (!this.postureController.hasShoulderDetected(poses[0])) {
-              this.statusView.renderError('어깨가 보이도록 카메라를 조정해주세요');
-            } else {
-              const result = this.postureController.analyzePosture(poses[0]);
-              if (result) {
-                this.calibrationService.addCalibrationSample(result.neckAngle);
-                sampleCount++;
+              // 어깨 감지 확인
+              if (!this.postureController.hasShoulderDetected(poses[0])) {
+                this.statusView.renderError('어깨가 보이도록 카메라를 조정해주세요');
+              } else {
+                // 거리 기반 측정
+                const distance = this.postureController.calculateDistance(poses[0]);
+                if (distance !== null) {
+                  this.calibrationService.addCalibrationSample(distance);
+                  sampleCount++;
 
-                this.calibrationCount.textContent = `${sampleCount} / ${targetSamples}`;
-                this.calibrationBar.style.width = `${(sampleCount / targetSamples) * 100}%`;
-                this.statusView.renderError(`바른 자세를 유지해주세요 (${sampleCount}/${targetSamples})`);
+                  this.calibrationCount.textContent = `${sampleCount} / ${targetSamples}`;
+                  this.calibrationBar.style.width = `${(sampleCount / targetSamples) * 100}%`;
+                  this.statusView.renderError(`바른 자세를 유지해주세요 (${sampleCount}/${targetSamples})`);
+                }
               }
             }
           }
-        }
 
-        if (sampleCount < targetSamples) {
-          setTimeout(loop, 400);
-        } else {
-          this.calibrationService.finishCalibration();
-          this.calibrationProgress.classList.add('hidden');
-          resolve();
-        }
-      };
+          if (sampleCount < targetSamples) {
+            setTimeout(loop, 400);
+          } else {
+            // 캘리브레이션 완료 시도 (변동 검사 포함)
+            const result = this.calibrationService.finishCalibration();
 
-      loop();
-    });
+            if (result.success) {
+              resolve(true);
+            } else if (result.needsRetry) {
+              // 변동이 크면 재시도 안내
+              this.statusView.renderError(result.message);
+              this.calibrationCount.textContent = '0 / 5';
+              this.calibrationBar.style.width = '0%';
+
+              // 2초 후 재시도
+              setTimeout(() => resolve(false), 2000);
+            } else {
+              resolve(false);
+            }
+          }
+        };
+
+        loop();
+      });
+    };
+
+    // 캘리브레이션 시도 (최대 3회)
+    let attempts = 0;
+    const maxAttempts = 3;
+
+    while (attempts < maxAttempts) {
+      const success = await runCalibrationAttempt();
+      if (success) {
+        this.calibrationProgress.classList.add('hidden');
+        this.statusView.renderError('캘리브레이션 완료!');
+        return;
+      }
+      attempts++;
+
+      if (attempts < maxAttempts) {
+        this.statusView.renderError(`재측정 중... (${attempts}/${maxAttempts})`);
+      }
+    }
+
+    // 3회 실패 시 마지막 값으로 진행
+    this.calibrationProgress.classList.add('hidden');
+    this.statusView.renderError('캘리브레이션 완료 (자세를 더 안정적으로 유지해주세요)');
   }
 
   /**
@@ -277,12 +317,15 @@ export class AppController {
     this.monitoringController.onSample(() => {
       if (this.lastPostureResult) {
         this.monitoringController.recordPosture({
-          ...this.lastPostureResult,
+          level: this.lastPostureResult.level,
+          neckAngle: this.lastPostureResult.neckAngle,
+          noseToShoulderDistance: 0,
+          distanceChange: this.lastPostureResult.distanceChange,
           timestamp: Date.now(),
         });
 
-        // 10초마다 각도 표시 업데이트
-        this.currentAngleEl.textContent = `${this.lastPostureResult.neckAngle.toFixed(1)}°`;
+        // 10초마다 거리 변화 표시 업데이트 (픽셀 단위)
+        this.currentAngleEl.textContent = `${this.lastPostureResult.distanceChange.toFixed(1)}px`;
       }
     });
 
@@ -292,6 +335,7 @@ export class AppController {
 
   /**
    * 실시간 감지 루프를 실행한다.
+   * 거리 변화 기반으로 자세를 판단한다.
    */
   private async runDetectionLoop(): Promise<void> {
     if (!this.isRunning) return;
@@ -305,31 +349,26 @@ export class AppController {
           // 스켈레톤 그리기
           this.cameraView.drawSkeleton(poses[0]);
 
-          const result = this.postureController.analyzePosture(poses[0]);
-
           // 어깨 감지 여부 확인
           if (!this.postureController.hasShoulderDetected(poses[0])) {
             this.statusView.renderError('어깨가 보이도록 카메라를 조정해주세요');
-          } else if (result) {
-            const adjustedAngle = Math.abs(this.calibrationService.getAdjustedAngle(result.neckAngle));
-
-            let level: 'normal' | 'warning' | 'danger' = 'normal';
-            if (adjustedAngle >= 25) level = 'danger';
-            else if (adjustedAngle >= 15) level = 'warning';
-
-            const adjustedResult = {
-              level,
-              neckAngle: adjustedAngle,
-              timestamp: Date.now(),
-            };
-
-            this.statusView.render(adjustedResult);
-
-            // 마지막 자세 상태 저장 (10초마다 기록용)
-            this.lastPostureResult = { level, neckAngle: adjustedAngle };
-            this.alertController.checkPosture(adjustedResult.level);
           } else {
-            this.statusView.renderError('어깨가 보이도록 카메라를 조정해주세요');
+            // 거리 변화 기반 분석
+            const result = this.postureController.analyzePosture(poses[0]);
+
+            if (result) {
+              this.statusView.render(result);
+
+              // 마지막 자세 상태 저장 (10초마다 기록용)
+              this.lastPostureResult = {
+                level: result.level,
+                neckAngle: result.distanceChange, // 하위 호환성을 위해 neckAngle에 저장
+                distanceChange: result.distanceChange,
+              };
+              this.alertController.checkPosture(result.level);
+            } else {
+              this.statusView.renderError('어깨가 보이도록 카메라를 조정해주세요');
+            }
           }
         } else {
           this.statusView.renderError('포즈를 감지할 수 없습니다');

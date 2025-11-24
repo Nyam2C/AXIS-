@@ -4,17 +4,22 @@
 
 **AXIS**는 TensorFlow.js와 MoveNet을 활용하여, 현대인의 고질병인 '거북목(Forward Head Posture)'을 실시간으로 교정하는 **웹 기반 헬스케어 솔루션**입니다.
 
+## 배포 사이트
+
+**https://axis-one-zeta.vercel.app/**
+
 ---
 
 ## 주요 기능
 
 ### 실시간 자세 감지
 - **MoveNet Lightning** 모델로 코와 어깨 좌표를 실시간 추출
-- 코-어깨 중심점 기반 기하학적 각도 계산
+- 어깨선과 코 간의 **거리 변화** 기반 측정
 - 상태별 시각 피드백 (정상/주의/위험)
 
 ### 개인 맞춤 캘리브레이션
 - 측정 시작 시 5회 샘플링으로 기준 자세 설정
+- **변동이 큰 경우 자동 재측정** (최대 3회 시도)
 - 개인별 자세 차이를 보정하여 정확한 측정
 
 ### 스마트 모니터링
@@ -72,8 +77,8 @@ AXIS/
 │   │
 │   ├── services/            # 외부 서비스
 │   │   ├── PoseDetectionService.ts  # MoveNet 래핑
-│   │   ├── CalibrationService.ts    # 캘리브레이션
-│   │   └── AngleCalculator.ts       # 각도 계산
+│   │   ├── CalibrationService.ts    # 캘리브레이션 (변동 검사 포함)
+│   │   └── AngleCalculator.ts       # 거리 계산
 │   │
 │   └── main.ts              # 앱 진입점
 │
@@ -83,27 +88,33 @@ AXIS/
 
 ---
 
-## 각도 계산 알고리즘
+## 자세 측정 알고리즘
 
-코와 어깨 중심점을 기반으로 목 기울기를 측정합니다:
+어깨선(Y좌표)과 코 간의 **거리 변화**를 기반으로 자세를 측정합니다:
 
 ```typescript
-// 코-어깨 중심점 기반 각도 계산
-function calculateNeckAngle(nose: Point, shoulderCenter: Point): number {
-  const dx = nose.x - shoulderCenter.x;
-  const dy = nose.y - shoulderCenter.y;
-
-  // 수직선 대비 코가 앞으로 나온 각도
-  const radians = Math.atan2(dx, -dy);
-  return Math.abs(radians * (180 / Math.PI));
+// 코-어깨 거리 계산
+function calculateNoseToShoulderDistance(nose: Point, shoulderCenter: Point): number {
+  // 어깨 중심점의 Y좌표와 코의 Y좌표 차이
+  // 화면 좌표계에서 Y는 아래로 갈수록 증가
+  return shoulderCenter.y - nose.y;
 }
+
+// 거리 변화량 계산 (양수 = 거북목)
+distanceChange = baselineDistance - currentDistance;
 ```
 
-| 각도 | 상태 | 설명 |
-|------|------|------|
-| 0° ~ 15° | 정상 | 바른 자세 |
-| 15° ~ 25° | 주의 | 자세 교정 필요 |
-| 25° 이상 | 위험 | 즉시 교정 권장 |
+### 캘리브레이션 검증
+- 5회 측정 시 **변동이 15px 초과**하면 재측정 요청
+- 최대 3회 재시도 후 진행
+
+### 자세 판단 기준
+
+| 거리 변화 | 상태 | 설명 |
+|-----------|------|------|
+| 0 ~ 20px | 정상 | 바른 자세 |
+| 20 ~ 40px | 주의 | 자세 교정 필요 |
+| 40px 이상 | 위험 | 즉시 교정 권장 |
 
 ---
 

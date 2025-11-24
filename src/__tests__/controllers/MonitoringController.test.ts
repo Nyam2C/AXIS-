@@ -2,6 +2,21 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { MonitoringController } from '../../controllers/MonitoringController';
 import type { PostureState } from '../../models/PostureState';
 
+// 테스트용 PostureState 생성 헬퍼
+function createPostureState(
+  level: 'normal' | 'warning' | 'danger',
+  neckAngle: number,
+  timestamp: number
+): PostureState {
+  return {
+    level,
+    neckAngle,
+    noseToShoulderDistance: 100,
+    distanceChange: neckAngle,
+    timestamp,
+  };
+}
+
 describe('MonitoringController', () => {
   let controller: MonitoringController;
 
@@ -71,11 +86,7 @@ describe('MonitoringController', () => {
 
   describe('데이터 기록', () => {
     it('recordPosture()로 자세 데이터를 기록할 수 있다', () => {
-      const state: PostureState = {
-        level: 'normal',
-        neckAngle: 10,
-        timestamp: Date.now(),
-      };
+      const state = createPostureState('normal', 10, Date.now());
 
       controller.recordPosture(state);
 
@@ -85,9 +96,9 @@ describe('MonitoringController', () => {
 
     it('여러 데이터를 기록할 수 있다', () => {
       const states: PostureState[] = [
-        { level: 'normal', neckAngle: 10, timestamp: 1000 },
-        { level: 'warning', neckAngle: 20, timestamp: 2000 },
-        { level: 'danger', neckAngle: 30, timestamp: 3000 },
+        createPostureState('normal', 10, 1000),
+        createPostureState('warning', 20, 2000),
+        createPostureState('danger', 30, 3000),
       ];
 
       states.forEach((s) => controller.recordPosture(s));
@@ -96,11 +107,7 @@ describe('MonitoringController', () => {
     });
 
     it('clearHistory()로 기록을 초기화할 수 있다', () => {
-      controller.recordPosture({
-        level: 'normal',
-        neckAngle: 10,
-        timestamp: Date.now(),
-      });
+      controller.recordPosture(createPostureState('normal', 10, Date.now()));
 
       controller.clearHistory();
 
@@ -110,9 +117,9 @@ describe('MonitoringController', () => {
 
   describe('통계', () => {
     it('평균 각도를 계산한다', () => {
-      controller.recordPosture({ level: 'normal', neckAngle: 10, timestamp: 1000 });
-      controller.recordPosture({ level: 'warning', neckAngle: 20, timestamp: 2000 });
-      controller.recordPosture({ level: 'danger', neckAngle: 30, timestamp: 3000 });
+      controller.recordPosture(createPostureState('normal', 10, 1000));
+      controller.recordPosture(createPostureState('warning', 20, 2000));
+      controller.recordPosture(createPostureState('danger', 30, 3000));
 
       expect(controller.getAverageAngle()).toBe(20);
     });
@@ -122,10 +129,10 @@ describe('MonitoringController', () => {
     });
 
     it('각 레벨별 횟수를 계산한다', () => {
-      controller.recordPosture({ level: 'normal', neckAngle: 10, timestamp: 1000 });
-      controller.recordPosture({ level: 'normal', neckAngle: 12, timestamp: 2000 });
-      controller.recordPosture({ level: 'warning', neckAngle: 20, timestamp: 3000 });
-      controller.recordPosture({ level: 'danger', neckAngle: 30, timestamp: 4000 });
+      controller.recordPosture(createPostureState('normal', 10, 1000));
+      controller.recordPosture(createPostureState('normal', 12, 2000));
+      controller.recordPosture(createPostureState('warning', 20, 3000));
+      controller.recordPosture(createPostureState('danger', 30, 4000));
 
       const stats = controller.getLevelStats();
 
@@ -160,8 +167,8 @@ describe('MonitoringController', () => {
       controller.onSessionComplete(callback);
 
       // 데이터 기록
-      controller.recordPosture({ level: 'normal', neckAngle: 10, timestamp: 1000 });
-      controller.recordPosture({ level: 'warning', neckAngle: 20, timestamp: 2000 });
+      controller.recordPosture(createPostureState('normal', 10, 1000));
+      controller.recordPosture(createPostureState('warning', 20, 2000));
 
       controller.start();
       vi.advanceTimersByTime(60000);
@@ -175,7 +182,7 @@ describe('MonitoringController', () => {
     });
 
     it('세션 완료 후 자동으로 히스토리를 초기화한다', () => {
-      controller.recordPosture({ level: 'normal', neckAngle: 10, timestamp: 1000 });
+      controller.recordPosture(createPostureState('normal', 10, 1000));
       controller.onSessionComplete(() => {});
       controller.start();
 
